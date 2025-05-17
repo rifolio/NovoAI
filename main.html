@@ -137,7 +137,7 @@
     return { index:-1, corner:null };
   }
 
-  // update defaultLabel when changing class; do NOT modify current
+  // update defaultLabel when changing class dropdown
   classSelect.addEventListener('change', e => {
     defaultLabel = e.target.value;
   });
@@ -189,15 +189,31 @@
     update();
   });
 
-  canvas.addEventListener('mouseup', e => { mode='none'; origBox=null; corner=null; updateList(); });
-
   window.addEventListener('keydown', e => {
-    if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z') {
-      e.preventDefault(); if (history.length) { bboxes=history.pop(); current=null; update(); updateList(); }}
-    if (e.key==='Delete' && current!==null) { pushHistory(); bboxes.splice(current,1); current=null; update(); updateList(); }
-    if (e.key==='Escape') { mode='none'; current=null; update(); updateList(); }
+    const key = e.key.toLowerCase();
+    // keyboard shortcuts for class selection
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (key === 't') defaultLabel = 'table';
+      if (key === 'r') defaultLabel = 'row';
+      if (key === 'c') defaultLabel = 'column';
+      if (key === 'l') defaultLabel = 'cell';
+      if (['t','r','c','l'].includes(key)) {
+        classSelect.value = defaultLabel;
+        return; // do not process other keys
+      }
+    }
+    // Undo Ctrl+Z or Cmd+Z
+    if ((e.ctrlKey||e.metaKey) && key === 'z') {
+      e.preventDefault(); if (history.length) { bboxes=history.pop(); current=null; update(); updateList(); }
+    }
+    // Delete or Escape
+    if (key === 'delete') {
+      if (current!==null) { pushHistory(); bboxes.splice(current,1); current=null; update(); updateList(); }
+    }
+    if (key === 'escape') { mode='none'; current=null; update(); updateList(); }
   });
 
+  canvas.addEventListener('mouseup', e => { mode='none'; origBox=null; corner=null; updateList(); });
   clearBtn.addEventListener('click', () => { pushHistory(); bboxes=[]; current=null; update(); updateList(); });
   undoBtn.addEventListener('click', () => { if(history.length){ bboxes=history.pop(); current=null; update(); updateList(); }});
 

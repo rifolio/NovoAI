@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Annotator: Table | Row | Column | Cell</title>
+  <style>
+    body { font-family: sans-serif; margin: 1em; }
+    #canvas { border: 1px solid #666; cursor: crosshair; }
+    #controls { margin-top: 1em; display: flex; align-items: center; gap: 1em; }
+    #bboxes { margin-top: .5em; max-height: 8em; overflow-y: auto; }
+    #bboxes div { font-size: .9em; padding: 2px; cursor: pointer; }
+    .selected { background: #efe; }
+    button { padding: .3em .6em; }
+  </style>
+</head>
+<body>
+  <h2>Annotator: Table | Row | Column | Cell</h2>
+  <input type="file" id="fileInput" accept="image/*"><br>
+  <canvas id="canvas"></canvas>
+  <div id="controls">
+    <label>Class:
+      <select id="classSelect">
+        <option value="table">Table</option>
+        <option value="row">Row</option>
+        <option value="column">Column</option>
+        <option value="cell">Cell</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="allowOverlap"> Allow overlap drawing</label>
+    <button id="undo">Undo</button>
+    <button id="clearBoxes">Clear All</button>
+    <button id="exportXML">Export XML</button>
+  </div>
+  <div id="bboxes"></div>
+
+  <script>
+  const fileInput    = document.getElementById('fileInput');
+  const canvas       = document.getElementById('canvas');
+  const ctx          = canvas.getContext('2d');
+  const classSelect  = document.getElementById('classSelect');
+  const allowOverlap = document.getElementById('allowOverlap');
+  const bboxesDiv    = document.getElementById('bboxes');
+  const undoBtn      = document.getElementById('undo');
+  const clearBtn     = document.getElementById('clearBoxes');
+  const exportBtn    = document.getElementById('exportXML');
+
+  // Predefined color mapping per class
+  const typeColors = {
+    table:  '#FF0000',
+    row:    '#00FF00',
+    column: '#0000FF',
+    cell:   '#FFA500'
+  };
+
+  let img = new Image();
+  let bboxes = [];
+  let history = [];
+  let mode = 'none';
+  let current = null;
+  let startX, startY, origBox, corner;
+
+  function pushHistory() {
+    history.push(JSON.parse(JSON.stringify(bboxes)));
+    if (history.length > 50) history.shift();
+  }
+
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files[0]; if (!file) return;
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      canvas.width = img.width; canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      bboxes = []; history = [];
+      update();
+      canvas.dataset.filename = file.name;
+      canvas.dataset.path     = file.name;
+    };
+    img.src = url;
+  });
+
+  function redraw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0);
+    ctx.lineWidth = 2;
+    bboxes.forEach((b, i) => {
+      ctx.strokeStyle = b.color;
+      ctx.strokeRect(b.xmin, b.ymin, b.xmax - b.xmin, b.ymax - b.ymin);
+      if (i === current) {
+        ['nw','ne','se','sw'].forEach(key => {
+          const cx = (key[1]==='w'?b.xmin:b.xmax);
+          const cy = (key[0]==='n'?b.ymin:b.ymax);
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(cx-3, cy-3, 6, 6);
+          ctx.strokeStyle = b.color;
+          ctx.strokeRect(cx-3, cy-3, 6, 6);
+        });
+      }
+    });
+  }
+
+  function updateList() {
+    bboxesDiv.innerHTML = bboxes.map((b, i) => {
+      const cls = b.label;
+      const color = b.color;
+      const sel = i === current ? 'selected' : '';
+      return `<div data-idx="${i}" class="${sel}" style="border-left:4px solid ${color}; padding-left:4px; margin:2px 0;">
+        #${i+1} [${cls}] (${b.xmin},${b.ymin})→(${b.xmax},${b.ymax})
+      </div>`;
+    }).join('');
+    document.querySelectorAll('#bboxes div').forEach(div => {
+      div.addEventListener('click', () => {
+        pushHistory();
+        current = parseInt(div.dataset.idx);
+        classSelect.value = bboxes[current].label;
+        update();
+      });
+    });
+  }
+
+  function hitTest(x, y) {
+    const tol = 6;
+    for (let i = bboxes.length - 1; i >= 0; i--) {
+      const b = bboxes[i];
+      const corners = { nw:[b.xmin,b.ymin], ne:[b.xmax,b.ymin], se:[b.xmax,b.ymax], sw:[b.xmin,b.ymax] };
+      for (let key in corners) {
+        const [cx, cy] = corners[key];
+        if (Math.abs(x-cx) <= tol && Math.abs(y-cy) <= tol) return { index: i, corner: key };
+      }
+      if (x>=b.xmin && x<=b.xmax && y>=b.ymin && y<=b.ymax) return { index:i, corner:null };
+    }
+    return { index:-1, corner:null };
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    if (!img.src) return;
+    const r = canvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const hit = hitTest(x, y);
+    if (hit.index >= 0 && !allowOverlap.checked) {
+      pushHistory();
+      current = hit.index;
+      origBox = {...bboxes[current]};
+      startX = x; startY = y;
+      corner = hit.corner;
+      mode = corner ? 'resize' : 'move';
+      classSelect.value = bboxes[current].label;
+    } else {
+      pushHistory();
+      current = bboxes.length;
+      mode = 'draw';
+      startX = x; startY = y;
+      bboxes.push({ 
+        xmin: x, ymin: y, xmax: x, ymax: y,
+        label: classSelect.value,
+        color: typeColors[classSelect.value]
+      });
+    }
+    update();
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (mode==='none' || current===null) return;
+    const r = canvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const b = bboxes[current];
+    if (mode==='draw') {
+      b.xmin = Math.min(startX, x); b.ymin = Math.min(startY, y);
+      b.xmax = Math.max(startX, x); b.ymax = Math.max(startY, y);
+    } else if (mode==='move') {
+      const dx = x - startX, dy = y - startY;
+      b.xmin = origBox.xmin + dx; b.ymin = origBox.ymin + dy;
+      b.xmax = origBox.xmax + dx; b.ymax = origBox.ymax + dy;
+    } else if (mode==='resize') {
+      if (corner.includes('n')) b.ymin = Math.min(origBox.ymax-5, y);
+      if (corner.includes('s')) b.ymax = Math.max(origBox.ymin+5, y);
+      if (corner.includes('w')) b.xmin = Math.min(origBox.xmax-5, x);
+      if (corner.includes('e')) b.xmax = Math.max(origBox.xmin+5, x);
+    }
+    update();
+  });
+
+  canvas.addEventListener('mouseup', e => { mode='none'; origBox=null; corner=null; updateList(); });
+
+  window.addEventListener('keydown', e => {
+    // Delete or Escape
+    if (e.key==='Delete' && current!==null) {
+      pushHistory(); bboxes.splice(current,1); current=null; update(); updateList(); }
+    if (e.key==='Escape') { mode='none'; current=null; update(); updateList(); }
+    // Undo with Ctrl+Z or Cmd+Z
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='z') {
+      e.preventDefault();
+      if (history.length) {
+        bboxes = history.pop();
+        current = null;
+        update(); updateList();
+      }
+    }
+  });
+
+  clearBtn.addEventListener('click', () => { pushHistory(); bboxes=[]; current=null; update(); updateList(); });
+  undoBtn.addEventListener('click', () => { if(history.length){ bboxes=history.pop(); current=null; update(); updateList(); }});
+
+  classSelect.addEventListener('change', e => {
+    if (current!==null) {
+      bboxes[current].label = e.target.value;
+      bboxes[current].color = typeColors[e.target.value];
+      update(); updateList();
+    }
+  });
+
+  exportBtn.addEventListener('click', () => {
+    if (!img.src) return alert('Load an image first!');
+    const filename = canvas.dataset.filename;
+    const path     = canvas.dataset.path;
+    const xml = [];
+    xml.push('<?xml version="1.0"?>');
+    xml.push('<annotation>');
+    xml.push('  <folder/>');
+    xml.push(`  <filename>${filename}</filename>`);
+    xml.push(`  <path>${path}</path>`);
+    xml.push('  <source><database>PubTables1M-Detection</database></source>');
+    xml.push('  <size>');
+    xml.push(`<width>${img.width}</width>`);
+    xml.push(`<height>${img.height}</height>`);
+    xml.push('  <depth>3</depth>');
+    xml.push('  </size>');
+    xml.push('  <segmented>0</segmented>');
+    bboxes.forEach(b => {
+      xml.push('  <object>');
+      xml.push(`    <name>${b.label}</name>`);
+      xml.push('    <pose>Frontal</pose>');
+      xml.push('    <truncated>0</truncated>');
+      xml.push('    <difficult>0</difficult>');
+      xml.push('    <occluded>0</occluded>');
+      xml.push('    <bndbox>');
+      xml.push(`<xmin>${b.xmin}</xmin>`);
+      xml.push(`<ymin>${b.ymin}</ymin>`);
+      xml.push(`<xmax>${b.xmax}</xmax>`);
+      xml.push(`<ymax>${b.ymax}</ymax>`);
+      xml.push('    </bndbox>');
+      xml.push('  </object>');
+    });
+    xml.push('</annotation>');
+    const blob = new Blob([xml.join('\n')], {type:'application/xml'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename.replace(/\.[^.]+$/, '') + '.xml';
+    a.click();
+  });
+
+  function update() { redraw(); updateList(); }
+  </script>
+</body>
+</html>

@@ -65,6 +65,8 @@
   let mode = 'none';
   let current = null;
   let startX, startY, origBox, corner;
+  // default class for next new box
+  let defaultLabel = classSelect.value;
 
   function pushHistory() {
     history.push(JSON.parse(JSON.stringify(bboxes)));
@@ -107,18 +109,15 @@
 
   function updateList() {
     bboxesDiv.innerHTML = bboxes.map((b, i) => {
-      const cls = b.label;
-      const color = b.color;
       const sel = i === current ? 'selected' : '';
-      return `<div data-idx="${i}" class="${sel}" style="border-left:4px solid ${color}; padding-left:4px; margin:2px 0;">
-        #${i+1} [${cls}] (${b.xmin},${b.ymin})→(${b.xmax},${b.ymax})
+      return `<div data-idx="${i}" class="${sel}" style="border-left:4px solid ${b.color}; padding-left:4px; margin:2px 0;">
+        #${i+1} [${b.label}] (${b.xmin},${b.ymin})→(${b.xmax},${b.ymax})
       </div>`;
     }).join('');
     document.querySelectorAll('#bboxes div').forEach(div => {
       div.addEventListener('click', () => {
         pushHistory();
         current = parseInt(div.dataset.idx);
-        classSelect.value = bboxes[current].label;
         update();
       });
     });
@@ -138,6 +137,11 @@
     return { index:-1, corner:null };
   }
 
+  // update defaultLabel when changing class; do NOT modify current
+  classSelect.addEventListener('change', e => {
+    defaultLabel = e.target.value;
+  });
+
   canvas.addEventListener('mousedown', e => {
     if (!img.src) return;
     const r = canvas.getBoundingClientRect();
@@ -150,7 +154,6 @@
       startX = x; startY = y;
       corner = hit.corner;
       mode = corner ? 'resize' : 'move';
-      classSelect.value = bboxes[current].label;
     } else {
       pushHistory();
       current = bboxes.length;
@@ -158,8 +161,8 @@
       startX = x; startY = y;
       bboxes.push({ 
         xmin: x, ymin: y, xmax: x, ymax: y,
-        label: classSelect.value,
-        color: typeColors[classSelect.value]
+        label: defaultLabel,
+        color: typeColors[defaultLabel]
       });
     }
     update();
@@ -189,23 +192,14 @@
   canvas.addEventListener('mouseup', e => { mode='none'; origBox=null; corner=null; updateList(); });
 
   window.addEventListener('keydown', e => {
-    if (e.key==='Delete' && current!==null) {
-      pushHistory(); bboxes.splice(current,1); current=null; update(); updateList(); }
-    if (e.key==='Escape') { mode='none'; current=null; update(); updateList(); }
     if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z') {
       e.preventDefault(); if (history.length) { bboxes=history.pop(); current=null; update(); updateList(); }}
+    if (e.key==='Delete' && current!==null) { pushHistory(); bboxes.splice(current,1); current=null; update(); updateList(); }
+    if (e.key==='Escape') { mode='none'; current=null; update(); updateList(); }
   });
 
   clearBtn.addEventListener('click', () => { pushHistory(); bboxes=[]; current=null; update(); updateList(); });
   undoBtn.addEventListener('click', () => { if(history.length){ bboxes=history.pop(); current=null; update(); updateList(); }});
-
-  classSelect.addEventListener('change', e => {
-    if (current!==null) {
-      bboxes[current].label = e.target.value;
-      bboxes[current].color = typeColors[e.target.value];
-      update(); updateList();
-    }
-  });
 
   exportBtn.addEventListener('click', () => {
     if (!img.src) return alert('Load an image first!');

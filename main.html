@@ -44,12 +44,19 @@
   const clearBtn     = document.getElementById('clearBoxes');
   const exportBtn    = document.getElementById('exportXML');
 
-  // Predefined color mapping per class
+  // Color mapping per class
   const typeColors = {
     table:  '#FF0000',
     row:    '#00FF00',
     column: '#0000FF',
     cell:   '#FFA500'
+  };
+  // XML name mapping per class
+  const xmlNames = {
+    table:  'table',
+    row:    'table row',
+    column: 'table column',
+    cell:   'table spanning cell'
   };
 
   let img = new Image();
@@ -182,19 +189,11 @@
   canvas.addEventListener('mouseup', e => { mode='none'; origBox=null; corner=null; updateList(); });
 
   window.addEventListener('keydown', e => {
-    // Delete or Escape
     if (e.key==='Delete' && current!==null) {
       pushHistory(); bboxes.splice(current,1); current=null; update(); updateList(); }
     if (e.key==='Escape') { mode='none'; current=null; update(); updateList(); }
-    // Undo with Ctrl+Z or Cmd+Z
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase()==='z') {
-      e.preventDefault();
-      if (history.length) {
-        bboxes = history.pop();
-        current = null;
-        update(); updateList();
-      }
-    }
+    if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='z') {
+      e.preventDefault(); if (history.length) { bboxes=history.pop(); current=null; update(); updateList(); }}
   });
 
   clearBtn.addEventListener('click', () => { pushHistory(); bboxes=[]; current=null; update(); updateList(); });
@@ -213,30 +212,32 @@
     const filename = canvas.dataset.filename;
     const path     = canvas.dataset.path;
     const xml = [];
-    xml.push('<?xml version="1.0"?>');
+    xml.push('<?xml version="1.0" ?>');
     xml.push('<annotation>');
     xml.push('  <folder/>');
     xml.push(`  <filename>${filename}</filename>`);
     xml.push(`  <path>${path}</path>`);
-    xml.push('  <source><database>PubTables1M-Detection</database></source>');
+    xml.push('  <source>');
+    xml.push('    <database>PubTables1M-Structure</database>');
+    xml.push('  </source>');
     xml.push('  <size>');
-    xml.push(`<width>${img.width}</width>`);
-    xml.push(`<height>${img.height}</height>`);
-    xml.push('  <depth>3</depth>');
+    xml.push(`    <width>${img.width}</width>`);
+    xml.push(`    <height>${img.height}</height>`);
+    xml.push('    <depth>3</depth>');
     xml.push('  </size>');
     xml.push('  <segmented>0</segmented>');
     bboxes.forEach(b => {
       xml.push('  <object>');
-      xml.push(`    <name>${b.label}</name>`);
+      xml.push(`    <name>${xmlNames[b.label]}</name>`);
       xml.push('    <pose>Frontal</pose>');
       xml.push('    <truncated>0</truncated>');
       xml.push('    <difficult>0</difficult>');
       xml.push('    <occluded>0</occluded>');
       xml.push('    <bndbox>');
-      xml.push(`<xmin>${b.xmin}</xmin>`);
-      xml.push(`<ymin>${b.ymin}</ymin>`);
-      xml.push(`<xmax>${b.xmax}</xmax>`);
-      xml.push(`<ymax>${b.ymax}</ymax>`);
+      xml.push(`      <xmin>${b.xmin}</xmin>`);
+      xml.push(`      <ymin>${b.ymin}</ymin>`);
+      xml.push(`      <xmax>${b.xmax}</xmax>`);
+      xml.push(`      <ymax>${b.ymax}</ymax>`);
       xml.push('    </bndbox>');
       xml.push('  </object>');
     });
